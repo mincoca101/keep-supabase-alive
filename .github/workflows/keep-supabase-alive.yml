@@ -1,0 +1,26 @@
+name: Keep Supabase Alive - Daily Ping to keep-alive table
+
+on:
+  schedule:
+    - cron: '0 0 * * *'          # Mỗi ngày lúc 00:00 UTC (khoảng 7:00 sáng VN). Bạn có thể đổi thành '0 1 * * *' cho 8:00 sáng VN
+  workflow_dispatch:             # Cho phép chạy thủ công để test
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping bảng keep-alive (select id limit 1)
+        run: |
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          
+          echo "HTTP Status: $RESPONSE"
+          cat response.json || echo "No response body"
+          
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "Ping thành công! Project vẫn active."
+          else
+            echo "Ping có vấn đề (status $RESPONSE), nhưng workflow vẫn chạy ok. Kiểm tra key/table."
+          fi
