@@ -2,25 +2,39 @@ name: Keep Supabase Alive - Daily Ping to keep-alive table
 
 on:
   schedule:
-    - cron: '0 0 * * *'          # Mỗi ngày lúc 00:00 UTC (khoảng 7:00 sáng VN). Bạn có thể đổi thành '0 1 * * *' cho 8:00 sáng VN
+    - cron: '0 0 * * *'          # Mỗi ngày lúc 00:00 UTC (khoảng 7:00 sáng VN)
   workflow_dispatch:             # Cho phép chạy thủ công để test
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping bảng keep-alive (select id limit 1)
+      - name: Thêm 1 dòng và SELECT từ bảng keep-alive
         run: |
-          RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id&limit=1" \
+          # Thêm 1 dòng mới
+          INSERT_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"created_at": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'", "note": "ping"}')
+          
+          echo "INSERT Status: $INSERT_RESPONSE"
+          
+          # SELECT để kiểm tra
+          SELECT_RESPONSE=$(curl -s -o response.txt -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id,created_at&order=created_at.desc&limit=3" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
           
-          echo "HTTP Status: $RESPONSE"
-          cat response.json || echo "No response body"
+          echo "SELECT Status: $SELECT_RESPONSE"
+          echo "3 dòng gần nhất:"
+          cat response.txt
           
-          if [ "$RESPONSE" -eq 200 ]; then
-            echo "Ping thành công! Project vẫn active."
+          # Kiểm tra kết quả
+          if [ "$INSERT_RESPONSE" -eq 201 ] && [ "$SELECT_RESPONSE" -eq 200 ]; then
+            echo "✅ Thành công!"
           else
-            echo "Ping có vấn đề (status $RESPONSE), nhưng workflow vẫn chạy ok. Kiểm tra key/table."
+            echo "❌ Thất bại - INSERT: $INSERT_RESPONSE, SELECT: $SELECT_RESPONSE"
           fi
