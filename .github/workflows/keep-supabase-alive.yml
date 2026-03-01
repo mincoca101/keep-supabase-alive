@@ -1,55 +1,57 @@
-name: Keep Supabase Alive - Daily Ping
+name: Keep Supabase Alive - Daily Ping + Cleanup Oldest
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *'  # 00:00 UTC ~ 07:00 VN
   workflow_dispatch:
 
 jobs:
-  ping:
+  ping-and-cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase keep-alive table
+      - name: Insert new ping & delete oldest row
         run: |
-          # Tạo timestamp chuẩn ISO 8601 UTC
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "Thời gian gửi: $NOW"
+          echo "Thời gian mới: $NOW"
 
-          # Body JSON - echo ra để kiểm tra chính xác format
-          BODY="{\"created_at\": \"$NOW\", \"note\": \"ping-staging-$(date +%s)\"}"
-          echo "Body JSON gửi đi:"
-          echo "$BODY"
-
-          # INSERT với return=representation để xem dữ liệu trả về nếu insert thật
-          INSERT_RESPONSE=$(curl -s -w "\nHTTP %{http_code}" \
+          # INSERT mới
+          curl -s -o /dev/null \
             -X POST \
             "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
-            -H "Prefer: return=representation" \
-            -d "$BODY")
+            -H "Prefer: return=minimal" \
+            -d "{\"created_at\": \"$NOW\", \"note\": \"ping-daily\"}"
 
-          echo ""
-          echo "INSERT full response (bao gồm body nếu thành công):"
-          echo "$INSERT_RESPONSE"
+          echo "Đã insert dòng mới"
 
-          # SELECT 5 dòng mới nhất
-          SELECT_RESPONSE=$(curl -s -o response.json -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id,created_at,note&order=created_at.desc&limit=5" \
+          # DELETE dòng cũ nhất (id nhỏ nhất)
+          # Lấy id nhỏ nhất trước (SELECT min(id)), rồi DELETE theo id đó
+          MIN_ID_RESPONSE=$(curl -s \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id&order=id.asc&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
 
-          echo ""
-          echo "SELECT HTTP: $SELECT_RESPONSE"
-          echo "5 dòng gần nhất:"
-          cat response.json || echo "(không có dữ liệu hoặc lỗi)"
+          MIN_ID=$(echo "$MIN_ID_RESPONSE" | jq -r '.[0].id // empty')
 
-          # Kết luận nhanh
-          echo ""
-          if echo "$INSERT_RESPONSE" | grep -q "201"; then
-            echo "INSERT trả 201 → nhưng kiểm tra body response có object mới không?"
+          if [ -n "$MIN_ID" ]; then
+            echo "Xóa dòng cũ nhất (id: $MIN_ID)"
+            DELETE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X DELETE \
+              "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?id=eq.$MIN_ID" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+
+            echo "DELETE status: $DELETE_RESPONSE"
           else
-            echo "INSERT KHÔNG phải 201 → có lỗi khác"
+            echo "Không có dòng nào để xóa"
           fi
-          echo "Nếu response.json vẫn [] hoặc không có 'ping-staging-...' → vấn đề là RLS hoặc body bị ignore"
+
+          # Optional: Kiểm tra 3 dòng mới nhất (khi chạy thủ công)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            curl -s \
+              "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id,created_at,note&order=created_at.desc&limit=3" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
+          fi
