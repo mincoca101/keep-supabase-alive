@@ -11,8 +11,13 @@ jobs:
     steps:
       - name: Insert new ping & delete oldest row
         run: |
-          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          # Tạo timestamp format năm-tháng-ngày-giờ:phút:giây (UTC)
+          NOW=$(date -u +"%Y-%m-%d-%H:%M:%S")
           echo "Thời gian mới: $NOW"
+
+          # Tạo note dạng ping-daily-YYYY-MM-DD-HH:MM:SS
+          NOTE="ping-daily-$NOW"
+          echo "Note sẽ dùng: $NOTE"
 
           # INSERT mới
           curl -s -o /dev/null \
@@ -22,12 +27,11 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
-            -d "{\"created_at\": \"$NOW\", \"note\": \"ping-daily\"}"
+            -d "{\"created_at\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\", \"note\": \"$NOTE\"}"
 
-          echo "Đã insert dòng mới"
+          echo "Đã insert dòng mới (note: $NOTE)"
 
           # DELETE dòng cũ nhất (id nhỏ nhất)
-          # Lấy id nhỏ nhất trước (SELECT min(id)), rồi DELETE theo id đó
           MIN_ID_RESPONSE=$(curl -s \
             "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id&order=id.asc&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
@@ -43,13 +47,14 @@ jobs:
               -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
               -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
 
-            echo "DELETE status: $DELETE_RESPONSE"
+            echo "DELETE status: $DELETE_RESPONSE (204 là thành công)"
           else
             echo "Không có dòng nào để xóa"
           fi
 
-          # Optional: Kiểm tra 3 dòng mới nhất (khi chạy thủ công)
+          # Optional: Kiểm tra 3 dòng mới nhất khi chạy thủ công
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "3 dòng gần nhất:"
             curl -s \
               "${{ secrets.SUPABASE_URL }}/rest/v1/keep-alive?select=id,created_at,note&order=created_at.desc&limit=3" \
               -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
