@@ -2,20 +2,19 @@ name: Keep Supabase Alive - Project 2 Daily Ping + Cleanup Oldest
 
 on:
 schedule:
-- cron: '30 0 * * *'   # 00:30 UTC ≈ 07:30 Việt Nam
+- cron: '30 0 * * *'
 workflow_dispatch:
 
 jobs:
 ping-and-cleanup:
 runs-on: ubuntu-latest
+steps:
+- name: Insert new ping and cleanup oldest row
+run: |
+NOW=$(date -u +"%Y-%m-%d-%H:%M:%S")
+NOTE="ping-daily-$NOW-project2"
 
 ```
-steps:
-  - name: Insert new ping & cleanup oldest row
-    run: |
-      NOW=$(date -u +"%Y-%m-%d-%H:%M:%S")
-      NOTE="ping-daily-$NOW-project2"
-
       echo "Insert ping: $NOTE"
 
       curl -s -X POST \
