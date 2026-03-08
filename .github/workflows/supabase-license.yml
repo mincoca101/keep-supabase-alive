@@ -1,40 +1,61 @@
 name: Keep Supabase Alive - Project 2 Daily Ping + Cleanup Oldest
 
 on:
-schedule:
-- cron: '30 0 * * *'
-workflow_dispatch:
+  schedule:
+    - cron: '30 0 * * *'   # 00:30 UTC mỗi ngày (~07:30 VN)
+  workflow_dispatch:       # Cho phép chạy thủ công
 
 jobs:
-ping-and-cleanup:
-runs-on: ubuntu-latest
+  ping-and-cleanup:
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Insert new ping and cleanup oldest row
-    run: |
-      NOW=$(date -u +"%Y-%m-%d-%H:%M:%S")
-      NOTE="ping-daily-$NOW-project2"
+    steps:
+      - name: Insert new ping and cleanup oldest row
+        run: |
+          set -e  # Dừng ngay nếu có lệnh nào lỗi
 
-      echo "Insert ping: $NOTE"
+          # Thời gian hiện tại chuẩn ISO (UTC)
+          PING_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          NOTE="ping-daily-$PING_TIME-project2"
 
-      curl -s -X POST "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive" \
-        -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
-        -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
-        -H "Content-Type: application/json" \
-        -H "Prefer: return=minimal" \
-        -d "{\"ping_time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",\"note\":\"$NOTE\"}"
+          echo "Inserting ping: $NOTE at $PING_TIME"
 
-      echo "Delete oldest row"
+          # Insert row mới
+          curl -s -X POST "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "{\"ping_time\":\"$PING_TIME\",\"note\":\"$NOTE\"}"
 
-      curl -s -X DELETE "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?order=id.asc&limit=1" \
-        -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
-        -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}"
+          echo ""
+          echo "Fetching oldest row to delete..."
 
-      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-        echo "Latest rows:"
-        curl -s "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?select=id,ping_time,note&order=ping_time.desc&limit=5" \
-          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}"
-      fi
-```
+          # Lấy id của hàng cũ nhất (order by ping_time ASC hoặc id ASC nếu có id tăng dần)
+          OLDEST=$(curl -s "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?select=id&order=ping_time.asc&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}")
+
+          OLDEST_ID=$(echo "$OLDEST" | jq -r '.[0].id // empty')
+
+          if [ -n "$OLDEST_ID" ]; then
+            echo "Deleting oldest row with id = $OLDEST_ID"
+
+            curl -s -X DELETE "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?id=eq.$OLDEST_ID" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}"
+
+            echo "Oldest row deleted."
+          else
+            echo "No rows to delete (table empty or error)."
+          fi
+
+          # Chỉ hiển thị debug khi chạy thủ công (workflow_dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo ""
+            echo "Latest 5 rows after cleanup:"
+            curl -s "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?select=id,ping_time,note&order=ping_time.desc&limit=5" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+              || echo "Failed to fetch latest rows"
+          fi
