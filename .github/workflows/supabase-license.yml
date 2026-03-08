@@ -1,4 +1,4 @@
-name: Keep Supabase Alive - Project 2 Daily Ping + Cleanup Oldest
+name: Keep Supabase Alive License.yml
 
 on:
   schedule:
