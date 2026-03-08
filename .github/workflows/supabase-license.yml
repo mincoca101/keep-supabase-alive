@@ -16,7 +16,7 @@ jobs:
 
           # Thời gian hiện tại chuẩn ISO (UTC)
           PING_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          NOTE="ping-daily-$PING_TIME-project2"
+          NOTE="ping-$PING_TIME"
 
           echo "Inserting ping: $NOTE at $PING_TIME"
 
