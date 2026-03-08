@@ -1,0 +1,43 @@
+name: Keep Supabase Alive - Project 2 Daily Ping + Cleanup Oldest
+
+on:
+schedule:
+- cron: '30 0 * * *'   # 00:30 UTC ≈ 07:30 Việt Nam
+workflow_dispatch:
+
+jobs:
+ping-and-cleanup:
+runs-on: ubuntu-latest
+
+```
+steps:
+  - name: Insert new ping & cleanup oldest row
+    run: |
+      NOW=$(date -u +"%Y-%m-%d-%H:%M:%S")
+      NOTE="ping-daily-$NOW-project2"
+
+      echo "Insert ping: $NOTE"
+
+      curl -s -X POST \
+        "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive" \
+        -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+        -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+        -H "Content-Type: application/json" \
+        -H "Prefer: return=minimal" \
+        -d "{\"ping_time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",\"note\":\"$NOTE\"}"
+
+      echo "Delete oldest row"
+
+      curl -s -X DELETE \
+        "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?order=id.asc&limit=1" \
+        -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+        -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}"
+
+      if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+        echo "Latest rows:"
+        curl -s \
+          "${{ secrets.SUPABASE_URL_2 }}/rest/v1/keep_alive?select=id,ping_time,note&order=ping_time.desc&limit=5" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY_2 }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY_2 }}"
+      fi
+```
